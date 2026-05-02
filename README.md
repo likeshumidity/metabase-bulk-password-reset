@@ -12,7 +12,10 @@ Useful when you need to force a password rotation across all users (e.g. after a
 
 > **Note:** Reset emails come from Metabase's configured email server. If your instance's email is not configured (Admin → Settings → Email), reset emails won't be delivered. Confirm email is working before running this against many users.
 
-By default, only **active** users are processed. SSO-only users (Google, SAML, etc.) typically don't have Metabase-managed passwords, so the reset email won't apply to them — but it's harmless to include them.
+By default, the script processes only **active, password-authenticated users**. Two categories are skipped automatically:
+
+- **Deactivated users** — typically pointless to reset. Override with `--include-deactivated`.
+- **SSO users** (Google, SAML, JWT, LDAP) — they don't have a Metabase-managed password, so the reset email is inert and only confuses recipients (who may waste time trying to "reset their SSO password"). Override with `--include-sso` only if you have a specific reason. The script identifies SSO users by the `sso_source` field on `/api/user`; if it's non-null, they're skipped.
 
 ## Requirements
 
@@ -84,7 +87,8 @@ chmod a+x reset-passwords.js
 | `--key <key>` | Admin API key | *(required)* |
 | `--dry-run` | Preview only — list users without sending emails | off |
 | `--rps <n>` | Max requests per second | `5` |
-| `--include-deactivated` | Also reset deactivated users | off |
+| `--include-deactivated` | Also reset deactivated users | off (skipped) |
+| `--include-sso` | Also reset SSO users (rarely useful — see note above) | off (skipped) |
 | `--help` | Print usage | — |
 
 ## Rate limiting
@@ -132,7 +136,7 @@ You're hitting Metabase's per-IP throttle on the forgot-password endpoint. Lower
 Test email delivery in **Admin → Settings → Email → Send test email**. Reset emails use the same SMTP config; if test email fails, password resets won't deliver either.
 
 **Users with SSO can't reset**
-That's expected — SSO users authenticate via your identity provider and don't have a Metabase-managed password. Reset them in your IdP instead.
+That's why the script skips them by default. SSO users authenticate via your identity provider and don't have a Metabase-managed password — reset them in your IdP instead. If you somehow want to send them an inert reset email anyway (rarely useful), pass `--include-sso`.
 
 ## License / sharing
 

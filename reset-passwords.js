@@ -20,6 +20,7 @@ const apiKey = String(args.key);
 const rps = Math.max(1, Number(args.rps) || 5);
 const dryRun = !!args["dry-run"];
 const includeDeactivated = !!args["include-deactivated"];
+const includeSso = !!args["include-sso"];
 
 main().catch((err) => {
   console.error("Fatal:", err.message);
@@ -28,16 +29,35 @@ main().catch((err) => {
 
 async function main() {
   console.log(`Listing users from ${baseUrl} ...`);
-  const users = await listAllUsers(includeDeactivated);
-  console.log(
-    `Found ${users.length} user(s)${includeDeactivated ? " (including deactivated)" : " (active only)"}.`,
-  );
+  const allFetched = await listAllUsers(includeDeactivated);
+
+  // SSO users (sso_source != null) don't have Metabase-managed passwords — Metabase's
+  // reset email is useless to them and would only confuse anyone who reads it. Default
+  // to excluding them; --include-sso to override.
+  const ssoUsers = allFetched.filter((u) => u.sso_source != null);
+  const users = includeSso ? allFetched : allFetched.filter((u) => u.sso_source == null);
+
+  const scopeLabel = includeDeactivated ? "including deactivated" : "active only";
+  console.log(`Found ${allFetched.length} user(s) (${scopeLabel}).`);
+  if (ssoUsers.length > 0) {
+    console.log(
+      includeSso
+        ? `  ${ssoUsers.length} SSO user(s) included (--include-sso). Note: their reset emails will be inert.`
+        : `  Skipping ${ssoUsers.length} SSO user(s). Use --include-sso to include them.`,
+    );
+  }
+  console.log(`Eligible for reset: ${users.length}.`);
+
   if (users.length === 0) return;
 
   if (dryRun) {
     console.log("\n[DRY RUN] Would trigger reset emails for:");
     users.forEach((u, i) =>
-      console.log(`  ${i + 1}. ${u.email}  (id=${u.id}, ${(u.first_name ?? "").trim()} ${(u.last_name ?? "").trim()})`),
+      console.log(
+        `  ${i + 1}. ${u.email}  (id=${u.id}, ${(u.first_name ?? "").trim()} ${(u.last_name ?? "").trim()}${
+          u.sso_source ? `, sso=${u.sso_source}` : ""
+        })`,
+      ),
     );
     return;
   }
@@ -156,6 +176,9 @@ Options:
   --dry-run               List users that would be reset; send no emails
   --rps <n>               Max requests per second (default: 5)
   --include-deactivated   Also reset deactivated users (default: skip)
+  --include-sso           Also reset SSO users (default: skip — their reset
+                          emails are useless since SSO users don't have a
+                          Metabase-managed password)
   --help, -h              Show this help
 
 Examples:
