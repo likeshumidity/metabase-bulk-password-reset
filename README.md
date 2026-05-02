@@ -15,7 +15,9 @@ Useful when you need to force a password rotation across all users (e.g. after a
 By default, the script processes only **active, password-authenticated users**. Two categories are skipped automatically:
 
 - **Deactivated users** — typically pointless to reset. Override with `--include-deactivated`.
-- **SSO users** (Google, SAML, JWT, LDAP) — they don't have a Metabase-managed password, so the reset email is inert and only confuses recipients (who may waste time trying to "reset their SSO password"). Override with `--include-sso` only if you have a specific reason. The script identifies SSO users by the `sso_source` field on `/api/user`; if it's non-null, they're skipped.
+- **SSO users** (Google, SAML, JWT, LDAP) — by default these users authenticate via your identity provider and don't have a Metabase-managed password, so the reset email is inert and only confuses recipients (who may waste time trying to "reset their SSO password"). The script identifies SSO users by the `sso_source` field on `/api/user`; if it's non-null, they're skipped.
+
+  **When `--include-sso` *is* useful:** if your instance has password login enabled alongside SSO via the **"Enable Password Login"** setting (Admin → Settings → Authentication) or the `MB_ENABLE_PASSWORD_LOGIN=true` environment variable, then SSO users *also* have a Metabase-managed password they can use as a fallback. In that case, passing `--include-sso` will trigger a real, actionable reset for those fallback passwords. Otherwise, leave it off.
 
 ## Requirements
 
@@ -89,7 +91,7 @@ chmod a+x reset-passwords.js
 | `--rps <n>` | Max requests per second | `5` |
 | `--emails <file>` | Path to a text file of emails (one per line) — limits the run to users whose email matches an entry | *(none — process all users)* |
 | `--include-deactivated` | Also reset deactivated users | off (skipped) |
-| `--include-sso` | Also reset SSO users (rarely useful — see note above) | off (skipped) |
+| `--include-sso` | Also reset SSO users (only useful if password login is enabled alongside SSO — see note above) | off (skipped) |
 | `--help` | Print usage | — |
 
 ### Limiting to specific users with `--emails`
@@ -185,7 +187,9 @@ If you hit the per-IP throttle (less common at default `--rps 5`), lower `--rps`
 Test email delivery in **Admin → Settings → Email → Send test email**. Reset emails use the same SMTP config; if test email fails, password resets won't deliver either.
 
 **Users with SSO can't reset**
-That's why the script skips them by default. SSO users authenticate via your identity provider and don't have a Metabase-managed password — reset them in your IdP instead. If you somehow want to send them an inert reset email anyway (rarely useful), pass `--include-sso`.
+That's why the script skips them by default. SSO users authenticate via your identity provider and don't have a Metabase-managed password — reset them in your IdP instead.
+
+**Exception:** if your instance has password login enabled alongside SSO (Admin → Settings → Authentication → **"Enable Password Login"**, or `MB_ENABLE_PASSWORD_LOGIN=true`), SSO users *also* have a Metabase password as a fallback. In that case, pass `--include-sso` and the resets will actually work for them.
 
 ## License
 

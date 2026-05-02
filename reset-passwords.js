@@ -225,9 +225,12 @@ Options:
                           Each input email is validated against /api/user
                           and reported as 'found' or 'NOT FOUND'.
   --include-deactivated   Also reset deactivated users (default: skip)
-  --include-sso           Also reset SSO users (default: skip — their reset
-                          emails are useless since SSO users don't have a
-                          Metabase-managed password)
+  --include-sso           Also reset SSO users (default: skip). Only useful
+                          if your instance has password login enabled
+                          alongside SSO (MB_ENABLE_PASSWORD_LOGIN=true or
+                          Admin > Settings > Authentication > Enable
+                          Password Login). Otherwise SSO users have no
+                          Metabase-managed password to reset.
   --help, -h              Show this help
 
 Examples:
