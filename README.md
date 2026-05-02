@@ -33,7 +33,7 @@ API keys are created by an admin in your Metabase instance:
 1. Sign in as an admin.
 2. Go to **Admin settings → Authentication → API keys**.
 3. Click **Create API key**.
-4. Name it (e.g. `password-reset`) and assign it to a group with admin permissions (the **Administrators** group, or a group with full data + settings access).
+4. Name it (e.g. `password-reset`) and assign it to a group with admin permissions (the **Administrators** group).
 5. Copy the generated key — it starts with `mb_…`. **You can only see it once.**
 6. Store it securely. Delete the key from Metabase when you're done.
 
@@ -87,9 +87,51 @@ chmod a+x reset-passwords.js
 | `--key <key>` | Admin API key | *(required)* |
 | `--dry-run` | Preview only — list users without sending emails | off |
 | `--rps <n>` | Max requests per second | `5` |
+| `--emails <file>` | Path to a text file of emails (one per line) — limits the run to users whose email matches an entry | *(none — process all users)* |
 | `--include-deactivated` | Also reset deactivated users | off (skipped) |
 | `--include-sso` | Also reset SSO users (rarely useful — see note above) | off (skipped) |
 | `--help` | Print usage | — |
+
+### Limiting to specific users with `--emails`
+
+If you only want to reset a subset of users, pass `--emails <file>` pointing at a plain-text file with one email per line:
+
+```text
+# users-to-reset.txt
+# Lines starting with # are ignored. Blank lines too.
+
+alice@example.com
+bob@example.com
+charlie@example.com
+
+# These are former employees — also need a reset:
+deceased-laptop@example.com
+```
+
+Matching is case-insensitive (`Foo@Bar.com` matches `foo@bar.com`), and duplicates are de-duped automatically. Each input email is validated against the user list returned by `/api/user`:
+
+```
+Found 4 email(s) in users-to-reset.txt.
+Validating emails against Metabase users:
+  alice@example.com  found
+  bob@example.com  found
+  charlie@example.com  NOT FOUND
+  deceased-laptop@example.com  found
+
+3 of 4 email(s) matched a Metabase user.
+```
+
+Emails that don't match any Metabase user are reported as `NOT FOUND` and skipped. The `--emails` filter composes with `--include-deactivated` and `--include-sso` — file-listed users are still subject to those filters unless the corresponding flag is set.
+
+Example:
+
+```bash
+node reset-passwords.js \
+  --url https://metabase.example.com \
+  --key mb_xxx \
+  --emails ./users-to-reset.txt \
+  --dry-run
+```
 
 ## Rate limiting
 
@@ -129,8 +171,15 @@ Exit codes:
 **`HTTP 401` listing users**
 The API key is invalid, expired, or missing admin permissions. Re-check the key and the group it's assigned to.
 
-**`HTTP 429` from `forgot_password`**
-You're hitting Metabase's per-IP throttle on the forgot-password endpoint. Lower `--rps` and re-run — successful users will get the email twice (harmless), and failed ones will succeed on the second pass.
+**`HTTP 400` with `"Too many attempts! You must wait N seconds before trying again."`**
+You're hitting Metabase's throttle on `/api/session/forgot_password`. There are two throttles:
+
+- **Per-IP** — protects against scripted abuse from a single source.
+- **Per-email** — prevents the same address from being spammed.
+
+The per-email throttle is what blocks accidental double-runs (re-running the script for the same users within the throttle window). The fix is to wait for the throttle window to expire, then re-run with `--emails` pointing at just the failed users.
+
+If you hit the per-IP throttle (less common at default `--rps 5`), lower `--rps` (e.g. `--rps 2`) and re-run.
 
 **No reset emails arriving**
 Test email delivery in **Admin → Settings → Email → Send test email**. Reset emails use the same SMTP config; if test email fails, password resets won't deliver either.

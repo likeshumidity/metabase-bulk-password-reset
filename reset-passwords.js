@@ -8,6 +8,8 @@
 // POST /api/session/forgot_password. Users receive the same reset email
 // they'd get from clicking "Forgot password?" on the login screen.
 
+const fs = require("node:fs");
+
 const args = parseArgs(process.argv.slice(2));
 
 if (args.help || !args.url || !args.key) {
@@ -21,6 +23,7 @@ const rps = Math.max(1, Number(args.rps) || 5);
 const dryRun = !!args["dry-run"];
 const includeDeactivated = !!args["include-deactivated"];
 const includeSso = !!args["include-sso"];
+const emailsFile = args.emails ? String(args.emails) : null;
 
 main().catch((err) => {
   console.error("Fatal:", err.message);
@@ -30,15 +33,36 @@ main().catch((err) => {
 async function main() {
   console.log(`Listing users from ${baseUrl} ...`);
   const allFetched = await listAllUsers(includeDeactivated);
+  const scopeLabel = includeDeactivated ? "including deactivated" : "active only";
+  console.log(`Found ${allFetched.length} user(s) in Metabase (${scopeLabel}).`);
+
+  // If --emails is provided, restrict to matching emails (case-insensitive).
+  let candidates = allFetched;
+  if (emailsFile) {
+    const inputEmails = readEmailsFile(emailsFile);
+    console.log(`\nFound ${inputEmails.length} email(s) in ${emailsFile}.`);
+    console.log("Validating emails against Metabase users:");
+    const byEmail = new Map(allFetched.map((u) => [u.email.toLowerCase(), u]));
+    const matched = [];
+    for (const email of inputEmails) {
+      const u = byEmail.get(email.toLowerCase());
+      if (u) {
+        console.log(`  ${email}  found`);
+        matched.push(u);
+      } else {
+        console.log(`  ${email}  NOT FOUND`);
+      }
+    }
+    candidates = matched;
+    console.log(`\n${matched.length} of ${inputEmails.length} email(s) matched a Metabase user.`);
+  }
 
   // SSO users (sso_source != null) don't have Metabase-managed passwords — Metabase's
   // reset email is useless to them and would only confuse anyone who reads it. Default
   // to excluding them; --include-sso to override.
-  const ssoUsers = allFetched.filter((u) => u.sso_source != null);
-  const users = includeSso ? allFetched : allFetched.filter((u) => u.sso_source == null);
+  const ssoUsers = candidates.filter((u) => u.sso_source != null);
+  const users = includeSso ? candidates : candidates.filter((u) => u.sso_source == null);
 
-  const scopeLabel = includeDeactivated ? "including deactivated" : "active only";
-  console.log(`Found ${allFetched.length} user(s) (${scopeLabel}).`);
   if (ssoUsers.length > 0) {
     console.log(
       includeSso
@@ -141,6 +165,26 @@ async function rateLimitedAll(items, fn, rps) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Read a text file containing one email per line.
+// - Trims whitespace.
+// - Skips blank lines and lines starting with `#` (comments).
+// - Dedupes case-insensitively, preserving the first-seen casing for output.
+function readEmailsFile(path) {
+  const text = fs.readFileSync(path, "utf8");
+  const lines = text.split(/\r?\n/);
+  const seen = new Set();
+  const out = [];
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const lower = line.toLowerCase();
+    if (seen.has(lower)) continue;
+    seen.add(lower);
+    out.push(line);
+  }
+  return out;
+}
+
 function parseArgs(argv) {
   const out = {};
   for (let i = 0; i < argv.length; i++) {
@@ -175,6 +219,11 @@ Required:
 Options:
   --dry-run               List users that would be reset; send no emails
   --rps <n>               Max requests per second (default: 5)
+  --emails <file>         Path to a text file of emails (one per line, blank
+                          lines and #-comments ignored). Only users whose
+                          email matches an entry in the file will be reset.
+                          Each input email is validated against /api/user
+                          and reported as 'found' or 'NOT FOUND'.
   --include-deactivated   Also reset deactivated users (default: skip)
   --include-sso           Also reset SSO users (default: skip — their reset
                           emails are useless since SSO users don't have a
@@ -182,10 +231,14 @@ Options:
   --help, -h              Show this help
 
 Examples:
-  # Preview (no emails sent):
+  # Preview all active users (no emails sent):
   node reset-passwords.js --url https://metabase.example.com --key mb_xxx --dry-run
 
   # Actually send reset emails to all active users:
   node reset-passwords.js --url https://metabase.example.com --key mb_xxx
+
+  # Reset only specific users from a list:
+  node reset-passwords.js --url https://metabase.example.com --key mb_xxx \\
+    --emails ./users-to-reset.txt --dry-run
 `);
 }
