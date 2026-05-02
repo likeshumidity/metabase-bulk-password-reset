@@ -187,6 +187,6 @@ Test email delivery in **Admin → Settings → Email → Send test email**. Res
 **Users with SSO can't reset**
 That's why the script skips them by default. SSO users authenticate via your identity provider and don't have a Metabase-managed password — reset them in your IdP instead. If you somehow want to send them an inert reset email anyway (rarely useful), pass `--include-sso`.
 
-## License / sharing
+## License
 
-Customers are welcome to copy, modify, and re-run this script. It's intentionally a single dependency-free file so you can audit it end-to-end before running it against your production Metabase.
+[MIT](./LICENSE) — copy, modify, redistribute, run against your production Metabase. The script is intentionally a single dependency-free file so you can audit it end-to-end before trusting it with your users.
